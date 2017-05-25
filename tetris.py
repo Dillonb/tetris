@@ -4,9 +4,9 @@ from pygame.locals import *
 from copy import deepcopy
 
 SQUARE_SIZE = 32 # Size of each square on the board
-EXTRA_BOTTOM_SPACE = 100
-EXTRA_RIGHT_SPACE = 100
-PIECE_SPAWN_DELAY = 20
+EXTRA_BOTTOM_SPACE = 0
+EXTRA_RIGHT_SPACE = 0
+PIECE_SPAWN_DELAY = 0
 PIECE_FALL_DELAY = 10
 PIECE_BORDER_WIDTH = 2
 EXTRA_HIDDEN_ROWS = 2
@@ -62,7 +62,7 @@ class TetrisBoard:
     def spawnPiece(self):
         # Line piece:
         self.fallingPiece = [
-            (2,1),(3,1),(4,1),(5,1)
+            (3,1),(4,1),(5,1),(6,1)
         ]
         self.fallingPieceColor = 1
 
@@ -135,7 +135,9 @@ class TetrisBoard:
                 elif event.key == K_d:
                     self.shiftFallingPieceIfPossible(1,0)
                 elif event.key == K_SPACE:
-                    pass
+                    if self.isPieceFalling():
+                        while self.canShiftFallingPiece(0,1):
+                            self.shiftFallingPiece(0,1)
 
         return True # Don't quit yet
 
