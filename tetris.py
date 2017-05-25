@@ -36,18 +36,23 @@ class TetrisBoard:
 
         self.boardState = [[0] * self.boardHeight] * self.boardWidth
 
-        self.boardState = []
-        for x in xrange(self.boardWidth):
-            column = []
-            for y in range(self.boardHeight):
-                column.append(0)
-            self.boardState.append(column)
+        self.boardState = self.newBlankBoard()
 
         self.pieceSpawnTimer = PIECE_SPAWN_DELAY
         self.pieceFallTimer = PIECE_FALL_DELAY
 
         self.fallingPiece = []
         self.fallingPieceColor = 0
+
+    def newBlankBoard(self):
+        boardState = []
+        for x in xrange(self.boardWidth):
+            column = []
+            for y in range(self.boardHeight):
+                column.append(0)
+            boardState.append(column)
+
+        return boardState
 
     def isPieceFalling(self):
         return not self.fallingPiece == []
@@ -65,6 +70,21 @@ class TetrisBoard:
             (3,1),(4,1),(5,1),(6,1)
         ]
         self.fallingPieceColor = 1
+        self.fallingPieceOrigin = (5,1)
+
+    def rotateFallingPiece(self):
+        newFallingPiece = []
+        originx, originy = self.fallingPieceOrigin
+
+        neworiginx,neworiginy = originx,originy
+
+        for x,y in self.fallingPiece:
+            newx = (y - originy) + originx
+            newy = (-(x - originx)) + originy
+
+            newFallingPiece.append((newx,newy))
+
+        self.fallingPiece = newFallingPiece
 
     def canShiftFallingPiece(self, xshift, yshift):
         newFallingPiece = []
@@ -91,15 +111,48 @@ class TetrisBoard:
             newFallingPiece.append((x + xshift,y + yshift))
             self.fallingPiece = newFallingPiece
 
+        originx,originy = self.fallingPieceOrigin
+        self.fallingPieceOrigin = (originx + xshift, originy + yshift)
+
     def shiftFallingPieceIfPossible(self, xshift,yshift):
         if self.canShiftFallingPiece(xshift,yshift):
             self.shiftFallingPiece(xshift,yshift)
+
+
+    def getOffset(self, y, fullRows):
+        offset = 0
+        for fullRow in fullRows:
+            if y <= fullRow:
+                offset -= 1
+        return offset
+
+    def checkForFullRows(self):
+        fullRows = []
+        for y in xrange(EXTRA_HIDDEN_ROWS, self.boardHeight):
+            full = True
+            for x in xrange(self.boardWidth):
+                if self.boardState[x][y] == 0:
+                    full = False
+            if full:
+                fullRows.append(y)
+
+        newBoardState = self.newBlankBoard()
+
+        for y in xrange(0, self.boardHeight):
+            y += self.getOffset(y, fullRows)
+            for x in xrange(0, self.boardWidth):
+                if y < 0:
+                    newBoardState[x][y] = 0
+                else:
+                    newBoardState[x][y] = self.boardState[x][y]
+        self.boardState = newBoardState
 
     def fixFallingPiece(self):
         for x,y in self.fallingPiece:
             self.boardState[x][y] = self.fallingPieceColor
         self.fallingPiece = []
         self.pieceSpawnTimer = PIECE_SPAWN_DELAY
+        self.checkForFullRows()
 
 
     def step(self):
@@ -127,7 +180,7 @@ class TetrisBoard:
                 return False
             elif event.type == KEYDOWN:
                 if event.key == K_w:
-                    pass
+                    self.rotateFallingPiece()
                 elif event.key == K_a:
                     self.shiftFallingPieceIfPossible(-1,0)
                 elif event.key == K_s:
