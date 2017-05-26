@@ -8,7 +8,7 @@ SQUARE_SIZE = 32 # Size of each square on the board
 EXTRA_BOTTOM_SPACE = 0
 EXTRA_RIGHT_SPACE = 0
 PIECE_SPAWN_DELAY = 0
-PIECE_FALL_DELAY = 10
+PIECE_FALL_DELAY = 20
 PIECE_BORDER_WIDTH = 2
 EXTRA_HIDDEN_ROWS = 2
 
@@ -73,6 +73,19 @@ PIECES = [
     }
 ]
 
+class ReinforcementLearner:
+    def __init__(self, explorationRate=0.1):
+        this.explorationRate = explorationRate
+
+    def onEpisodeStart(self):
+        pass
+
+    def onEpisodeEnd(self):
+        pass
+
+    def getNextAction(self, state):
+        pass
+
 class TetrisBoard:
     def __init__(self, width=10,height=20):
         self.boardVisibleHeight = height
@@ -118,6 +131,10 @@ class TetrisBoard:
         self.fallingPiece = piece["points"]
         self.fallingPieceColor = piece["color"]
         self.fallingPieceOrigin = piece["origin"]
+
+        for x,y in self.fallingPiece:
+            if self.boardState[y][x] != 0:
+                self.boardState = self.newBlankBoard() # Lose
 
     def canRotateFallingPiece(self):
         newFallingPiece = []
