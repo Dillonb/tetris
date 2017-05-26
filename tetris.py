@@ -74,17 +74,45 @@ PIECES = [
 ]
 
 class ReinforcementLearner:
-    def __init__(self, explorationRate=0.1):
-        this.explorationRate = explorationRate
+    def __init__(self, explorationRate=0.1, learningRate = 0.01):
+        self.explorationRate = explorationRate
+        self.learningRate = learningRate
+        self.policy = {}
 
     def onEpisodeStart(self):
-        pass
+        self.stateActions = []
 
     def onEpisodeEnd(self):
-        pass
+        for state, action in self.stateActions:
+            if not state in self.policy:
+                self.policy[state] = self.getDefaultActions()
+
+            #self.policy[state][action] +=
 
     def getNextAction(self, state):
-        pass
+        possibleActions = self.getActionsWithScores(state)
+        if random.random() < self.explorationRate:
+            action = random.choice(possibleActions)
+        else:
+            action = max(possibleActions)
+
+        self.stateActions.append((state, action))
+
+        return action
+
+
+    def getDefaultActions(self):
+        return {
+            "ROTATE": 1,
+            "DROP": 1,
+            "LEFT": 1,
+            "RIGHT": 1
+        }
+
+    def getActionsWithScores(self, state):
+        if not state in self.policy:
+            self.policy[state] = self.getDefaultActions()
+        return self.policy[state]
 
 class TetrisBoard:
     def __init__(self, width=10,height=20):
@@ -146,6 +174,21 @@ class TetrisBoard:
                 encoded += ("0" if cell == 0 else "1")
 
         return encoded
+
+    def getScore(self):
+        numberOfSquaresFilled = 0
+        height = 0
+
+        for row in self.boardState:
+            empty = True
+            for cell in row:
+                if cell != 0:
+                    numberOfSquaresFilled += 1
+                    empty = False
+            if not empty:
+                height += 1
+
+        return numberOfSquaresFilled * height
 
     def spawnPiece(self):
         piece = random.choice(PIECES)
