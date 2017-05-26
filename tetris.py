@@ -2,6 +2,7 @@
 import pygame
 from pygame.locals import *
 from copy import deepcopy
+import random
 
 SQUARE_SIZE = 32 # Size of each square on the board
 EXTRA_BOTTOM_SPACE = 0
@@ -20,10 +21,57 @@ COLORS = [
     (0,0,255), # J piece (J)
     (255,165,0), # L piece (L)
     (255,255,0), # Square piece (O)
-    (00,255,00), # S piece (S)
+    (0,255,0), # S piece (S)
+    (96, 0, 200), # T piece (T)
     (255,0,0) # Z piece (Z)
 ]
 GRAY = (128,128,128)
+
+PIECES = [
+    # I
+    {
+        "points": [(3,1),(4,1),(5,1),(6,1)],
+        "color": 1,
+        "origin": (5,1)
+    },
+    # J
+    {
+        "points": [(4,0), (5,0),(6,0),(6,1)],
+        "color":2,
+        "origin": (5,0)
+
+    },
+    # L
+    {
+        "points": [(4,0), (5,0),(6,0),(4,1)],
+        "color":3,
+        "origin": (5,0)
+    },
+    # O
+    {
+        "points": [(4,0),(5,0),(4,1),(5,1)],
+        "color": 4,
+        "origin": (5,0)
+    },
+    # S
+    {
+        "points": [(5,0),(6,0),(4,1),(5,1)],
+        "color":5,
+        "origin": (5,0)
+    },
+    # T
+    {
+        "points": [(4,0), (5,0), (6,0), (5,1)],
+        "color":6,
+        "origin": (5,0)
+    },
+    # Z
+    {
+        "points": [(4,0),(5,0),(5,1),(6,1)],
+        "color":7,
+        "origin": (5,0)
+    }
+]
 
 class TetrisBoard:
     def __init__(self, width=10,height=20):
@@ -64,13 +112,31 @@ class TetrisBoard:
 
         return tempBoard
 
+
     def spawnPiece(self):
-        # Line piece:
-        self.fallingPiece = [
-            (3,1),(4,1),(5,1),(6,1)
-        ]
-        self.fallingPieceColor = 1
-        self.fallingPieceOrigin = (5,1)
+        piece = random.choice(PIECES)
+        self.fallingPiece = piece["points"]
+        self.fallingPieceColor = piece["color"]
+        self.fallingPieceOrigin = piece["origin"]
+
+    def canRotateFallingPiece(self):
+        newFallingPiece = []
+        originx, originy = self.fallingPieceOrigin
+
+        neworiginx,neworiginy = originx,originy
+
+        result = True
+        for x,y in self.fallingPiece:
+            newx = (y - originy) + originx
+            newy = (-(x - originx)) + originy
+
+
+            try:
+                result = result and newx >= 0 and newy >= 0 and self.boardState[newy][newx] == 0
+            except IndexError:
+                result = False
+
+        return result
 
     def rotateFallingPiece(self):
         newFallingPiece = []
@@ -85,6 +151,10 @@ class TetrisBoard:
             newFallingPiece.append((newx,newy))
 
         self.fallingPiece = newFallingPiece
+
+    def rotateFallingPieceIfPossible(self):
+        if self.canRotateFallingPiece():
+            self.rotateFallingPiece()
 
     def canShiftFallingPiece(self, xshift, yshift):
         newFallingPiece = []
@@ -174,7 +244,7 @@ class TetrisBoard:
                 return False
             elif event.type == KEYDOWN:
                 if event.key == K_w:
-                    self.rotateFallingPiece()
+                    self.rotateFallingPieceIfPossible()
                 elif event.key == K_a:
                     self.shiftFallingPieceIfPossible(-1,0)
                 elif event.key == K_s:
