@@ -8,8 +8,8 @@ SQUARE_SIZE = 32 # Size of each square on the board
 EXTRA_BOTTOM_SPACE = 0
 EXTRA_RIGHT_SPACE = 0
 PIECE_SPAWN_DELAY = 0
-PIECE_FALL_DELAY = 20
-PIECE_BORDER_WIDTH = 2
+PIECE_FALL_DELAY = 0
+PIECE_BORDER_WIDTH = 1
 EXTRA_HIDDEN_ROWS = 2
 
 
@@ -125,6 +125,27 @@ class TetrisBoard:
 
         return tempBoard
 
+    def getTrimmedBoard(self):
+        board = self.getBoardWithFallingPiece()
+        trimmedBoard = []
+
+        highestBlock = [self.boardHeight] * self.boardWidth
+
+        for y in xrange(self.boardHeight):
+            for x in xrange(self.boardWidth):
+                if board[y][x] != 0 and y < highestBlock[x]:
+                    highestBlock[x] = y
+
+        return board[min(highestBlock):max(highestBlock)]
+
+    def getEncodedBoard(self):
+        trimmed = self.getTrimmedBoard()
+        encoded = ""
+        for row in trimmed:
+            for cell in row:
+                encoded += ("0" if cell == 0 else "1")
+
+        return encoded
 
     def spawnPiece(self):
         piece = random.choice(PIECES)
@@ -235,7 +256,6 @@ class TetrisBoard:
         self.pieceSpawnTimer = PIECE_SPAWN_DELAY
         self.checkForFullRows()
 
-
     def step(self):
         if self.pieceSpawnTimer == 0:
             self.spawnPiece()
@@ -286,7 +306,7 @@ class TetrisBoard:
 
                 pygame.draw.rect(screen, color, rect)
 
-                if not color == COLORS[0] or True:
+                if not color == COLORS[0]:
                     pygame.draw.rect(screen, GRAY, rect, PIECE_BORDER_WIDTH)
 
 def main():
