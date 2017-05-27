@@ -3,6 +3,13 @@ import pygame
 from pygame.locals import *
 from copy import deepcopy
 import random
+import os.path
+import pickle
+import sys
+
+from util import window
+
+ML_MODEL_FILENAME = "ml_model.p"
 
 SQUARE_SIZE = 32 # Size of each square on the board
 EXTRA_BOTTOM_SPACE = 0
@@ -74,25 +81,63 @@ PIECES = [
 ]
 
 class ReinforcementLearner:
-    def __init__(self, explorationRate=0.1, learningRate = 0.01):
+    def __init__(self, explorationRate=0.05, learningRate = 0.2, discount = 0.8):
         self.explorationRate = explorationRate
         self.learningRate = learningRate
-        self.policy = {}
+        self.discount = discount
+
+        if os.path.isfile(ML_MODEL_FILENAME):
+            print("Loading ML model...")
+            f = open(ML_MODEL_FILENAME)
+            self.policy = pickle.load(f)
+            f.close()
+            print("Done loading.")
+        else:
+            self.policy = {}
+
+        self.episodes = 0
+
+        self.seenStates = 0
+        self.newStates = 0
+
+    def saveModel(self):
+        print("Saving ML model...")
+        f = open(ML_MODEL_FILENAME, "w")
+        pickle.dump(self.policy, f)
+        print("Done saving.")
 
     def onEpisodeStart(self):
         self.stateActions = []
 
-    def onEpisodeEnd(self):
-        for state, action in self.stateActions:
+    def onEpisodeEnd(self, reward):
+        for curPair, nextPair in window(self.stateActions):
+            state,action = curPair
+            nextState, nextAction = nextPair
+
             if not state in self.policy:
                 self.policy[state] = self.getDefaultActions()
 
-            #self.policy[state][action] +=
+            if not nextState in self.policy:
+                self.policy[nextState] = self.getDefaultActions()
+
+            qThis = self.policy[state][action]
+            qNext = self.policy[nextState][nextAction]
+
+            updateValue = self.learningRate * (reward + self.discount * qNext - qThis)
+            self.policy[state][action] += updateValue
+
+        self.episodes += 1
+
+        if self.episodes % 100000 == 0:
+            print("Episodes: " + str(self.episodes))
+            self.saveModel()
+
 
     def getNextAction(self, state):
+        #print(len(self.policy))
         possibleActions = self.getActionsWithScores(state)
         if random.random() < self.explorationRate:
-            action = random.choice(possibleActions)
+            action = random.choice(list(possibleActions))
         else:
             action = max(possibleActions)
 
@@ -103,15 +148,24 @@ class ReinforcementLearner:
 
     def getDefaultActions(self):
         return {
-            "ROTATE": 1,
-            "DROP": 1,
-            "LEFT": 1,
-            "RIGHT": 1
+            "ROTATE": 0,
+            "DROP": 0,
+            "LEFT": 0,
+            "RIGHT": 0
         }
 
     def getActionsWithScores(self, state):
         if not state in self.policy:
             self.policy[state] = self.getDefaultActions()
+            self.newStates += 1
+        else:
+            self.seenStates += 1
+
+        if (self.seenStates + self.newStates) % 1000 == 0:
+            seenStates = float(self.seenStates)
+            totalStates = float(self.seenStates + self.newStates)
+            print("total states this run: " + str(totalStates))
+            print("percent seen states this run: " + str((seenStates / totalStates) * 100))
         return self.policy[state]
 
 class TetrisBoard:
@@ -133,6 +187,8 @@ class TetrisBoard:
         self.fallingPiece = []
         self.fallingPieceColor = 0
 
+        self.learner = ReinforcementLearner()
+
     def newBlankBoard(self):
         boardState = []
         for y in xrange(self.boardHeight):
@@ -147,7 +203,8 @@ class TetrisBoard:
         return not self.fallingPiece == []
 
     def getBoardWithFallingPiece(self):
-        tempBoard = deepcopy(self.boardState)
+        #tempBoard = deepcopy(self.boardState)
+        tempBoard = [row[:] for row in self.boardState]
         for x,y in self.fallingPiece:
             tempBoard[y][x] = self.fallingPieceColor
 
@@ -188,7 +245,8 @@ class TetrisBoard:
             if not empty:
                 height += 1
 
-        return numberOfSquaresFilled * height
+        # This should optimize for a low stack packed tightly
+        return -1 * numberOfSquaresFilled * height
 
     def spawnPiece(self):
         piece = random.choice(PIECES)
@@ -299,8 +357,23 @@ class TetrisBoard:
         self.pieceSpawnTimer = PIECE_SPAWN_DELAY
         self.checkForFullRows()
 
+    def actionShiftLeft(self):
+        self.shiftFallingPieceIfPossible(-1,0)
+
+    def actionShiftRight(self):
+        self.shiftFallingPieceIfPossible(1,0)
+
+    def actionDrop(self):
+        if self.isPieceFalling():
+            while self.canShiftFallingPiece(0,1):
+                self.shiftFallingPiece(0,1)
+
+    def actionRotate(self):
+        self.rotateFallingPieceIfPossible()
+
     def step(self):
         if self.pieceSpawnTimer == 0:
+            self.learner.onEpisodeStart()
             self.spawnPiece()
             self.pieceSpawnTimer = -1
 
@@ -312,6 +385,7 @@ class TetrisBoard:
                 if self.canShiftFallingPiece(0,1):
                     self.shiftFallingPiece(0,1)
                 else:
+                    self.learner.onEpisodeEnd(self.getScore())
                     self.fixFallingPiece()
                 self.pieceFallTimer = PIECE_FALL_DELAY
             self.pieceFallTimer -= 1
@@ -324,17 +398,25 @@ class TetrisBoard:
                 return False
             elif event.type == KEYDOWN:
                 if event.key == K_w:
-                    self.rotateFallingPieceIfPossible()
+                    self.actionRotate()
                 elif event.key == K_a:
-                    self.shiftFallingPieceIfPossible(-1,0)
+                    self.actionShiftLeft()
                 elif event.key == K_s:
                     pass
                 elif event.key == K_d:
-                    self.shiftFallingPieceIfPossible(1,0)
+                    self.actionShiftRight()
                 elif event.key == K_SPACE:
-                    if self.isPieceFalling():
-                        while self.canShiftFallingPiece(0,1):
-                            self.shiftFallingPiece(0,1)
+                    self.actionDrop()
+
+        action = self.learner.getNextAction(self.getEncodedBoard())
+        if action == "ROTATE":
+            self.actionRotate()
+        elif action == "DROP":
+            self.actionDrop()
+        elif action == "LEFT":
+            self.actionShiftLeft()
+        elif action == "RIGHT":
+            self.actionShiftRight()
 
         return True # Don't quit yet
 
@@ -361,13 +443,17 @@ def main():
 
     quit = False
 
+    quiet = "-q" in sys.argv
+    fast = "-f" in sys.argv
+
     while board.step():
-        clock.tick(60)
-        board.render(screen)
-        pygame.display.flip()
+        if not quiet:
+            board.render(screen)
+            pygame.display.flip()
+            if not fast and not quiet:
+                clock.tick(60)
 
-    # TODO cleanup, save ML model, quit
-
+    board.learner.saveModel()
 
 if __name__ == "__main__":
     main()
