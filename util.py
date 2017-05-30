@@ -9,3 +9,6 @@ def window(seq, n=2):
     for elem in it:
         result = result[1:] + (elem,)
         yield result
+
+def mean(l):
+    return float(sum(l)) / max(len(l), 1)

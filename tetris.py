@@ -7,9 +7,9 @@ import os.path
 import pickle
 import sys
 
-from util import window
+from util import window, mean
 
-ML_MODEL_FILENAME = "ml_model.p"
+ML_MODEL_FILENAME = "weights.p"
 
 SQUARE_SIZE = 32 # Size of each square on the board
 EXTRA_BOTTOM_SPACE = 0
@@ -18,6 +18,11 @@ PIECE_SPAWN_DELAY = 0
 PIECE_FALL_DELAY = 0
 PIECE_BORDER_WIDTH = 1
 EXTRA_HIDDEN_ROWS = 2
+
+TETRIS_BOARD_WIDTH = 10
+TETRIS_BOARD_HEIGHT = 20
+
+ACTIONS = ["LEFT", "RIGHT", "DROP", "ROTATE"]
 
 
 # https://en.wikipedia.org/wiki/Tetris#Colors_of_Tetriminos
@@ -81,7 +86,7 @@ PIECES = [
 ]
 
 class ReinforcementLearner:
-    def __init__(self, explorationRate=0.05, learningRate = 0.2, discount = 0.8):
+    def __init__(self, explorationRate=0.00, learningRate = 0.1, discount = 0.1):
         self.explorationRate = explorationRate
         self.learningRate = learningRate
         self.discount = discount
@@ -93,12 +98,20 @@ class ReinforcementLearner:
             f.close()
             print("Done loading.")
         else:
-            self.policy = {}
+            self.policy = self.newPolicy()
 
         self.episodes = 0
 
         self.seenStates = 0
         self.newStates = 0
+        self.rewards = []
+
+    def newPolicy(self):
+        policy = {}
+        for a in ACTIONS:
+            policy[a] = [0] * (TETRIS_BOARD_HEIGHT + EXTRA_HIDDEN_ROWS) * TETRIS_BOARD_WIDTH
+        return policy
+
 
     def saveModel(self):
         print("Saving ML model...")
@@ -109,32 +122,43 @@ class ReinforcementLearner:
     def onEpisodeStart(self):
         self.stateActions = []
 
-    def onEpisodeEnd(self, reward):
+    def value(self, state, action):
+        result = 0
+        for a,b in zip(self.policy[action], state):
+            result += a+b
+        return result
+
+    def onEpisodeEnd(self, reward, finalState):
+        self.rewards.append(reward)
+        self.stateActions.append((finalState, "DROP"))
         for curPair, nextPair in window(self.stateActions):
             state,action = curPair
             nextState, nextAction = nextPair
 
-            if not state in self.policy:
-                self.policy[state] = self.getDefaultActions()
+            qThis = self.value(state, action)
+            qNext = self.value(nextState, nextAction)
 
-            if not nextState in self.policy:
-                self.policy[nextState] = self.getDefaultActions()
+            difference = reward + self.discount * qNext - qThis
+            if self.episodes % 100 == 0:
+                print "----------------------"
+                print "Reward: ", reward
+                print "Discount: ", self.discount
+                print "qThis", qThis
+                print "qNext", qNext
+                print "Difference: ", difference
 
-            qThis = self.policy[state][action]
-            qNext = self.policy[nextState][nextAction]
-
-            updateValue = self.learningRate * (reward + self.discount * qNext - qThis)
-            self.policy[state][action] += updateValue
-
+            for i in xrange(len(self.policy[action])):
+                update = self.learningRate * difference * state[i]
+                #if update < -1 or update > 1:
+                #    print "Update:",update
+                self.policy[action][i] += update
         self.episodes += 1
-
-        if self.episodes % 100000 == 0:
+        if self.episodes % 1000 == 0:
             print("Episodes: " + str(self.episodes))
             self.saveModel()
 
 
     def getNextAction(self, state):
-        #print(len(self.policy))
         possibleActions = self.getActionsWithScores(state)
         if random.random() < self.explorationRate:
             action = random.choice(list(possibleActions))
@@ -145,31 +169,15 @@ class ReinforcementLearner:
 
         return action
 
-
-    def getDefaultActions(self):
-        return {
-            "ROTATE": 0,
-            "DROP": 0,
-            "LEFT": 0,
-            "RIGHT": 0
-        }
-
     def getActionsWithScores(self, state):
-        if not state in self.policy:
-            self.policy[state] = self.getDefaultActions()
-            self.newStates += 1
-        else:
-            self.seenStates += 1
+        result = {}
+        for action in ACTIONS:
+            result[action] = self.value(state, action)
 
-        if (self.seenStates + self.newStates) % 1000 == 0:
-            seenStates = float(self.seenStates)
-            totalStates = float(self.seenStates + self.newStates)
-            print("total states this run: " + str(totalStates))
-            print("percent seen states this run: " + str((seenStates / totalStates) * 100))
-        return self.policy[state]
+        return result
 
 class TetrisBoard:
-    def __init__(self, width=10,height=20):
+    def __init__(self, width=TETRIS_BOARD_WIDTH,height=TETRIS_BOARD_HEIGHT):
         self.boardVisibleHeight = height
         self.boardHeight = height + EXTRA_HIDDEN_ROWS # hidden rows on top
         self.boardWidth = width
@@ -203,7 +211,6 @@ class TetrisBoard:
         return not self.fallingPiece == []
 
     def getBoardWithFallingPiece(self):
-        #tempBoard = deepcopy(self.boardState)
         tempBoard = [row[:] for row in self.boardState]
         for x,y in self.fallingPiece:
             tempBoard[y][x] = self.fallingPieceColor
@@ -224,11 +231,10 @@ class TetrisBoard:
         return board[min(highestBlock):max(highestBlock)]
 
     def getEncodedBoard(self):
-        trimmed = self.getTrimmedBoard()
-        encoded = ""
-        for row in trimmed:
+        encoded = []
+        for row in self.getBoardWithFallingPiece():
             for cell in row:
-                encoded += ("0" if cell == 0 else "1")
+                encoded.append(0 if cell == 0 else 1)
 
         return encoded
 
@@ -245,8 +251,13 @@ class TetrisBoard:
             if not empty:
                 height += 1
 
+        percentSquaresFilled = float(numberOfSquaresFilled) / ((TETRIS_BOARD_HEIGHT + EXTRA_HIDDEN_ROWS) * TETRIS_BOARD_WIDTH)
+        percentHeight = float(height) / (TETRIS_BOARD_HEIGHT + EXTRA_HIDDEN_ROWS)
+
         # This should optimize for a low stack packed tightly
-        return -1 * numberOfSquaresFilled * height
+        #return -1 * numberOfSquaresFilled * height
+        #return numberOfSquaresFilled - (height * 10)
+        return 1 + percentSquaresFilled - percentHeight
 
     def spawnPiece(self):
         piece = random.choice(PIECES)
@@ -385,7 +396,7 @@ class TetrisBoard:
                 if self.canShiftFallingPiece(0,1):
                     self.shiftFallingPiece(0,1)
                 else:
-                    self.learner.onEpisodeEnd(self.getScore())
+                    self.learner.onEpisodeEnd(self.getScore(), self.getEncodedBoard())
                     self.fixFallingPiece()
                 self.pieceFallTimer = PIECE_FALL_DELAY
             self.pieceFallTimer -= 1
@@ -451,7 +462,7 @@ def main():
             board.render(screen)
             pygame.display.flip()
             if not fast and not quiet:
-                clock.tick(60)
+                clock.tick(10)
 
     board.learner.saveModel()
 
